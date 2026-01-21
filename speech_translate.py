@@ -1,34 +1,69 @@
-import speech_recognition as sr
+import sounddevice as sd
+import soundfile as sf
+import numpy as np
+from scipy.io.wavfile import write
+import requests
 from langdetect import detect
 from gtts import gTTS
 import os
 import platform
 from transformers import pipeline
 from deep_translator import GoogleTranslator
+import json
 
 # Initialize emotion classifier
+print("Loading emotion classifier...")
 emotion_classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", top_k=1)
 
-# Recognize speech using microphone
-def recognize_speech(language="en-US"):
-    recognizer = sr.Recognizer()
-    # Note: SpeechRecognition library handles the audio backend automatically
-    # It will use sounddevice if pyaudio is not available
-    with sr.Microphone() as source:
-        print(f"🎙️ Speak now ({language})...")
-        print("⏳ Adjusting for ambient noise... Please wait.")
-        recognizer.adjust_for_ambient_noise(source, duration=1)
-        audio = recognizer.listen(source)
-        try:
-            text = recognizer.recognize_google(audio, language=language)
-            print(f"✅ Recognized Text: {text}")
-            return text
-        except sr.UnknownValueError:
-            print("❌ Could not understand the audio.")
-            return None
-        except sr.RequestError as e:
-            print(f"❌ Could not request results; {e}")
-            return None
+# Record audio using sounddevice
+def record_audio(duration=5, sample_rate=16000):
+    print(f"🎙️ Recording for {duration} seconds... Speak now!")
+    audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='int16')
+    sd.wait()  # Wait until recording is finished
+    print("✅ Recording complete!")
+    return audio, sample_rate
+
+# Save audio to file
+def save_audio(audio, sample_rate, filename="temp_audio.wav"):
+    write(filename, sample_rate, audio)
+    return filename
+
+# Recognize speech using Google Speech API
+def recognize_speech_from_file(audio_file, language="en-US"):
+    try:
+        # Read the audio file
+        with open(audio_file, 'rb') as f:
+            audio_data = f.read()
+        
+        # Use Google Speech-to-Text API (free tier)
+        url = "http://www.google.com/speech-api/v2/recognize"
+        params = {
+            'output': 'json',
+            'lang': language,
+            'key': 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw'  # Free demo key
+        }
+        headers = {'Content-Type': 'audio/l16; rate=16000;'}
+        
+        response = requests.post(url, params=params, headers=headers, data=audio_data)
+        
+        # Parse response
+        for line in response.content.decode('utf-8').strip().split('\n'):
+            if line:
+                try:
+                    result = json.loads(line)
+                    if 'result' in result and result['result']:
+                        transcript = result['result'][0]['alternative'][0]['transcript']
+                        print(f"✅ Recognized Text: {transcript}")
+                        return transcript
+                except:
+                    continue
+        
+        print("❌ Could not understand the audio.")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Speech recognition failed: {e}")
+        return None
 
 # Detect language from text
 def detect_language(text):
@@ -99,7 +134,20 @@ def main():
     }
     
     recognition_lang = lang_map.get(input_lang, 'en-US')
-    text = recognize_speech(language=recognition_lang)
+    
+    # Record audio
+    duration = int(input("Enter recording duration in seconds (default 5): ") or "5")
+    audio, sample_rate = record_audio(duration=duration)
+    
+    # Save audio to file
+    audio_file = save_audio(audio, sample_rate)
+    
+    # Recognize speech
+    text = recognize_speech_from_file(audio_file, language=recognition_lang)
+    
+    # Clean up temporary file
+    if os.path.exists(audio_file):
+        os.remove(audio_file)
 
     if text:
         src_lang = detect_language(text)
@@ -126,3 +174,5 @@ if __name__ == "__main__":
         print("\n\n👋 Program interrupted. Goodbye!")
     except Exception as e:
         print(f"\n❌ An error occurred: {e}")
+        import traceback
+        traceback.print_exc()
