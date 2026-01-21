@@ -5,3 +5,9 @@ transformers
 torch
 deep-translator
 pyaudio
+sounddevice
+soundfile
+scipy
+pydub
+pyrubberband
+numpy
