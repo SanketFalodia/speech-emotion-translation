@@ -4,7 +4,7 @@ This imports the original functionality and adds emotional speech
 """
 
 import sounddevice as sd
-from emotion_tts_windows import text_to_emotional_speech
+from emotion_tts_windows import text_to_emotional_speech  # Windows-compatible version
 from scipy.io.wavfile import write
 import requests
 from langdetect import detect
@@ -14,9 +14,6 @@ import platform
 from transformers import pipeline
 from deep_translator import GoogleTranslator
 import json
-
-# Import the emotional TTS module
-from emotion_tts import text_to_emotional_speech
 
 # Initialize emotion classifier
 print("Loading emotion classifier...")
