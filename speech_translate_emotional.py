@@ -1,6 +1,7 @@
 """
-Enhanced Speech Translation with Voice Cloning
+Enhanced Speech Translation with OpenVoice Voice Cloning
 Records user's voice, translates, and outputs in their own voice
+Updated to use OpenVoice instead of simple_voice_cloning
 """
 
 import sounddevice as sd
@@ -13,16 +14,28 @@ import platform
 from transformers import pipeline
 from deep_translator import GoogleTranslator
 import json
-from simple_voice_cloning import clone_and_speak
+
+# Import OpenVoice cloning module
+try:
+    from openvoice_cloning import clone_and_speak
+    OPENVOICE_AVAILABLE = True
+except ImportError:
+    OPENVOICE_AVAILABLE = False
+    print("⚠️  OpenVoice not available. Install with:")
+    print("   pip install git+https://github.com/myshell-ai/OpenVoice.git")
+    print("   pip install git+https://github.com/myshell-ai/MeloTTS.git")
 
 # Initialize emotion classifier
 print("Loading emotion classifier...")
-emotion_classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", top_k=1)
+emotion_classifier = pipeline("text-classification", 
+                              model="j-hartmann/emotion-english-distilroberta-base", 
+                              top_k=1)
 
 # Record audio using sounddevice
-def record_audio(duration=5, sample_rate=22050):  # 22050 Hz is better for voice cloning
+def record_audio(duration=5, sample_rate=22050):
     print(f"🎙️ Recording for {duration} seconds... Speak now!")
-    audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='int16')
+    audio = sd.rec(int(duration * sample_rate), samplerate=sample_rate, 
+                   channels=1, dtype='int16')
     sd.wait()
     print("✅ Recording complete!")
     return audio, sample_rate
@@ -106,35 +119,19 @@ def play_audio(audio_file):
     except Exception as e:
         print(f"❌ Could not play audio: {e}")
 
-# Map language codes for TTS
-def map_language_code(lang_code):
-    """Map 2-letter codes to full language names for XTTS"""
-    lang_map = {
-        'en': 'en',
-        'es': 'es',
-        'fr': 'fr',
-        'de': 'de',
-        'it': 'it',
-        'pt': 'pt',
-        'pl': 'pl',
-        'tr': 'tr',
-        'ru': 'ru',
-        'nl': 'nl',
-        'cs': 'cs',
-        'ar': 'ar',
-        'zh': 'zh-cn',
-        'ja': 'ja',
-        'hi': 'hi',  # Hindi support depends on model
-        'ko': 'ko'
-    }
-    return lang_map.get(lang_code, 'en')
-
-# Main workflow with voice cloning
+# Main workflow with OpenVoice cloning
 def main():
     print("=" * 70)
     print("🎤 Multilingual Speech Translation with Voice Cloning")
-    print("   Your voice, any language!")
+    print("   Powered by OpenVoice + Librosa Emotion Processing")
     print("=" * 70)
+    
+    if not OPENVOICE_AVAILABLE:
+        print("\n⚠️  WARNING: OpenVoice not installed!")
+        print("   Install with:")
+        print("   pip install git+https://github.com/myshell-ai/OpenVoice.git")
+        print("   pip install git+https://github.com/myshell-ai/MeloTTS.git")
+        print("   Will use fallback TTS if needed.\n")
     
     print("\n📝 Supported languages:")
     print("   en - English    | hi - Hindi     | bn - Bengali")
@@ -145,7 +142,7 @@ def main():
     
     input_lang = input("Enter the language you'll speak (e.g., 'en', 'hi', 'es'): ").strip()
     
-    # Map language codes to Google Speech Recognition format
+    # Language mapping for speech recognition
     lang_map = {
         'en': 'en-US', 'hi': 'hi-IN', 'bn': 'bn-IN',
         'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE',
@@ -156,10 +153,17 @@ def main():
     recognition_lang = lang_map.get(input_lang, 'en-US')
     
     # Record audio
-    duration = int(input("Enter recording duration in seconds (default 5): ") or "5")
+    print("\n" + "="*70)
+    print("📢 IMPORTANT: This recording will be used for voice cloning!")
+    print("   • Speak clearly in a quiet environment")
+    print("   • 6-12 seconds is ideal for best voice cloning")
+    print("   • Your voice characteristics will be captured")
+    print("="*70)
+    
+    duration = int(input("\nEnter recording duration in seconds (default 8): ") or "8")
     audio, sample_rate = record_audio(duration=duration, sample_rate=22050)
     
-    # Save audio to file (this becomes our voice reference!)
+    # Save audio (this becomes our voice reference)
     audio_file = save_audio(audio, sample_rate, filename="user_voice_reference.wav")
     
     # Recognize speech
@@ -174,34 +178,37 @@ def main():
         print(f"😊 Emotion: {emotion_label.capitalize()} ({emotion_score * 100:.1f}%)")
 
         # Translate text
-        dest_lang = input("\nEnter target language code for translation (e.g., 'en', 'fr', 'hi', 'es'): ").strip()
+        dest_lang = input("\nEnter target language for translation (e.g., 'en', 'fr', 'hi', 'es'): ").strip()
         translated = translate_text(text, dest_lang)
         
         if translated:
-            print(f"📝 Translated Text: {translated}")
+            print(f"\n📝 Original: {text}")
+            print(f"📝 Translated: {translated}")
             
-            # Ask about voice cloning
+            # Voice cloning options
             print("\n" + "=" * 70)
-            print("🎭 Output Options:")
+            print("🎭 Voice Synthesis Options:")
             print("=" * 70)
-            print("1. Voice Cloning + Emotion (YOUR voice with emotional expression)")
-            print("2. Voice Cloning Only (YOUR voice, neutral)")
-            print("3. Standard TTS (robotic voice)")
+            if OPENVOICE_AVAILABLE:
+                print("1. OpenVoice Cloning + Emotion (YOUR voice with emotional expression)")
+                print("2. OpenVoice Cloning Only (YOUR voice, neutral)")
+                print("3. Fallback TTS (if OpenVoice fails)")
+            else:
+                print("1. Fallback TTS (OpenVoice not available)")
             
             choice = input("\nChoose option (1/2/3, default=1): ").strip() or "1"
             
-            if choice in ['1', '2']:
-                print("\n🎤 Using emotional voice cloning...")
+            if OPENVOICE_AVAILABLE and choice in ['1', '2']:
+                print("\n🎤 Using OpenVoice voice cloning...")
                 
                 try:
-                    target_lang_code = dest_lang
                     use_emotion = (choice == '1')
                     
                     # Clone voice and generate speech
                     output_file = clone_and_speak(
                         text=translated,
                         reference_audio=audio_file,
-                        language=target_lang_code,
+                        language=dest_lang,
                         emotion=emotion_label if use_emotion else 'neutral',
                         output_file="cloned_voice_output.wav"
                     )
@@ -211,23 +218,26 @@ def main():
                     
                 except Exception as e:
                     print(f"\n❌ Voice cloning failed: {e}")
-                    print("   Falling back to standard TTS...")
+                    print("   Falling back to gTTS...")
                     tts = gTTS(text=translated, lang=dest_lang)
                     tts.save("output.mp3")
                     play_audio("output.mp3")
             
             else:
-                # Use standard TTS
+                # Use fallback TTS
                 print("\n🔊 Generating standard speech...")
                 tts = gTTS(text=translated, lang=dest_lang)
                 tts.save("output.mp3")
                 play_audio("output.mp3")
             
-            # Clean up reference audio if not needed
+            # Cleanup option
             cleanup = input("\n🗑️  Delete recorded voice reference? (y/n, default=n): ").strip().lower()
             if cleanup == 'y' and os.path.exists(audio_file):
                 os.remove(audio_file)
                 print("✅ Reference audio deleted.")
+            else:
+                print(f"✅ Reference audio saved as: {audio_file}")
+                print("   You can reuse this for future voice cloning!")
         else:
             print("❌ Translation failed. Please try again.")
     else:
